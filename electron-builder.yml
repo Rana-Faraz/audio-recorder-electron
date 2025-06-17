@@ -1,0 +1,55 @@
+appId: com.shadcn.electron.audiorecorder
+productName: 'Audio Recorder'
+directories:
+  output: dist
+  buildResources: resources
+files:
+  - 'out/**/*'
+  - 'node_modules/**/*'
+extraResources:
+  - from: 'src/native/Recorder'
+    to: 'Recorder'
+win:
+  icon: resources/icon.png
+  target: nsis
+mac:
+  icon: resources/icon.png
+  target:
+    - target: dmg
+      arch: x64 # Use x64 instead of universal to avoid conflicts
+  # identity will be auto-discovered from keychain
+  entitlementsInherit: build/entitlements.mac.plist
+  category: public.app-category.utilities
+  bundleVersion: '1.0.0'
+  hardenedRuntime: true
+  entitlements: build/entitlements.mac.plist
+  gatekeeperAssess: false
+  extendInfo:
+    NSCameraUsageDescription: 'This app requires camera access to capture screen content.'
+    NSMicrophoneUsageDescription: 'This app requires microphone access to record system audio.'
+    NSScreenCaptureDescription: 'This app requires screen recording permission to capture system audio.'
+    NSDocumentsFolderUsageDescription: 'This app needs access to save recordings to your Documents folder.'
+    NSDownloadsFolderUsageDescription: 'This app needs access to save recordings to your Downloads folder.'
+    CFBundleName: 'Audio Recorder'
+    CFBundleDisplayName: 'Audio Recorder'
+    CFBundleIdentifier: 'com.shadcn.electron.audiorecorder'
+    CFBundleVersion: '1.0.0'
+    CFBundleShortVersionString: '1.0.0'
+    LSMinimumSystemVersion: '10.14.0'
+    NSRequiresAquaSystemAppearance: false
+  notarize: false
+dmg:
+  artifactName: ${name}-${version}.${ext}
+linux:
+  icon: resources/icon.png
+  target: AppImage
+  maintainer: electronjs.org
+  category: Utility
+appImage:
+  artifactName: ${name}-${version}.${ext}
+npmRebuild: false
+publish:
+  provider: generic
+  url: https://example.com/auto-updates
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/

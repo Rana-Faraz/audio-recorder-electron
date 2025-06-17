@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>Audio Recorder</string>
+	<key>CFBundleName</key>
+	<string>Audio Recorder</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.shadcn.electron.audiorecorder</string>
+	<key>CFBundleVersion</key>
+	<string>1.0.0</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0.0</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app requires camera access to capture screen content.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app requires microphone access to record system audio.</string>
+	<key>NSScreenCaptureDescription</key>
+	<string>This app requires screen recording permission to capture system audio.</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>This app needs access to save recordings to your Documents folder.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>This app needs access to save recordings to your Downloads folder.</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>10.14.0</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.utilities</string>
+</dict>
+</plist> 
