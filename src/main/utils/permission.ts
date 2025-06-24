@@ -1,28 +1,16 @@
-import { promisify } from 'util'
-import { exec } from 'child_process'
-import { join } from 'path'
-import { app } from 'electron'
-
-const execAsync = promisify(exec)
-
-interface PermissionResponse {
-  code: string
-}
+import { systemPreferences } from 'electron'
 
 export const checkPermissions = async (): Promise<boolean> => {
   try {
-    // In packaged app, use process.resourcesPath, in dev use app.getAppPath()
-    const resourcesPath = app.isPackaged
-      ? process.resourcesPath
-      : join(app.getAppPath(), 'src/native')
+    // On macOS, check screen recording permission
+    if (process.platform === 'darwin') {
+      const status = systemPreferences.getMediaAccessStatus('screen')
+      console.log('Screen recording permission status:', status)
+      return status === 'granted'
+    }
 
-    const binaryPath = join(resourcesPath, 'Recorder')
-    console.log('Binary path:', binaryPath) // Debug log
-
-    const { stdout } = await execAsync(`"${binaryPath}" --check-permissions`)
-    const response: PermissionResponse = JSON.parse(stdout.trim())
-
-    return response.code === 'PERMISSION_GRANTED'
+    // On other platforms, assume permission is granted
+    return true
   } catch (error) {
     console.error('Error checking permissions:', error)
     return false

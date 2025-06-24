@@ -1,349 +1,251 @@
 import React, { useState, useEffect } from 'react'
 import { Button } from './ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
-import { Input } from './ui/input'
-import { Label } from './ui/label'
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from './ui/alert-dialog'
 import { useToast } from '../lib/hooks/use-toast'
-import { Mic, MicOff, FolderOpen, Settings } from 'lucide-react'
+import { Settings, Shield, Power, CheckCircle } from 'lucide-react'
 
-interface RecordingState {
-  isRecording: boolean
-  isPermissionGranted: boolean | null
-  selectedFolder: string | null
-  filename: string
-  recordingPath: string | null
-  startTime: number | null
-  duration: number
+interface CompanionState {
+  hasPermission: boolean | null
+  startupEnabled: boolean
+  isLoading: boolean
 }
 
 export const AudioRecorder: React.FC = () => {
   const { toast } = useToast()
-  const [recordingState, setRecordingState] = useState<RecordingState>({
-    isRecording: false,
-    isPermissionGranted: null,
-    selectedFolder: null,
-    filename: '',
-    recordingPath: null,
-    startTime: null,
-    duration: 0
+  const [state, setState] = useState<CompanionState>({
+    hasPermission: null,
+    startupEnabled: false,
+    isLoading: true
   })
-  const [showPermissionDialog, setShowPermissionDialog] = useState(false)
 
-  // Check permissions on component mount
+  // Check permissions and startup status on component mount
   useEffect(() => {
-    checkPermissions()
+    console.log('Component mounted, checking window.api:', window.api)
+    console.log('window.api?.companion:', window.api?.companion)
+    console.log('window.electron:', window.electron)
+    console.log('All window properties:', Object.keys(window))
+
+    // Add a small delay to ensure APIs are loaded
+    const timer = setTimeout(() => {
+      checkStatus()
+    }, 100)
+
+    return () => clearTimeout(timer)
   }, [])
 
-  // Timer for recording duration
-  useEffect(() => {
-    let interval: NodeJS.Timeout
+  const checkStatus = async () => {
+    // Wait for API to be available with retries
+    let retries = 0
+    const maxRetries = 10
 
-    if (recordingState.isRecording && recordingState.startTime) {
-      interval = setInterval(() => {
-        const now = Date.now()
-        const duration = Math.floor((now - recordingState.startTime!) / 1000)
-        setRecordingState((prev) => ({ ...prev, duration }))
-      }, 1000)
+    while (!window.api?.companion && retries < maxRetries) {
+      console.log(`Waiting for API... attempt ${retries + 1}/${maxRetries}`)
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      retries++
     }
 
-    return () => {
-      if (interval) clearInterval(interval)
-    }
-  }, [recordingState.isRecording, recordingState.startTime])
-
-  // Set up event listeners
-  useEffect(() => {
-    if (!window.api?.recording) return
-
-    const handleRecordingStatus = (status: string, timestamp: number, path?: string) => {
-      if (status === 'START_RECORDING') {
-        setRecordingState((prev) => ({
-          ...prev,
-          isRecording: true,
-          startTime: timestamp,
-          recordingPath: path || null,
-          duration: 0
-        }))
-        toast({
-          title: 'Recording Started',
-          description: 'Audio recording has begun successfully.'
-        })
-      } else if (status === 'STOP_RECORDING') {
-        setRecordingState((prev) => ({
-          ...prev,
-          isRecording: false,
-          startTime: null,
-          duration: 0
-        }))
-        toast({
-          title: 'Recording Stopped',
-          description: path ? `Recording saved to: ${path}` : 'Recording has been stopped.'
-        })
-      }
-    }
-
-    const handlePermissionDenied = () => {
-      setRecordingState((prev) => ({ ...prev, isPermissionGranted: false }))
-      setShowPermissionDialog(true)
-    }
-
-    const handleRecordingError = (error: string) => {
-      setRecordingState((prev) => ({ ...prev, isRecording: false }))
+    if (!window.api?.companion) {
+      console.warn('Companion API not available after retries')
+      setState((prev) => ({ ...prev, isLoading: false, hasPermission: false }))
       toast({
-        title: 'Recording Error',
-        description: `Error: ${error}`,
+        title: 'API Error',
+        description: 'Failed to load app API. Please restart the application.',
         variant: 'destructive'
       })
+      return
     }
 
-    window.api.recording.onRecordingStatus(handleRecordingStatus)
-    window.api.recording.onPermissionDenied(handlePermissionDenied)
-    window.api.recording.onRecordingError(handleRecordingError)
-
-    return () => {
-      window.api.recording.removeAllListeners()
-    }
-  }, [toast])
-
-  const checkPermissions = async () => {
-    if (!window.api?.recording) return
+    console.log('API available, proceeding with status check')
 
     try {
-      const hasPermission = await window.api.recording.checkPermissions()
-      setRecordingState((prev) => ({ ...prev, isPermissionGranted: hasPermission }))
+      setState((prev) => ({ ...prev, isLoading: true }))
 
-      if (!hasPermission) {
-        setShowPermissionDialog(true)
-      }
+      const [hasPermission, startupEnabled] = await Promise.all([
+        window.api.companion.checkPermissions(),
+        window.api.companion.getStartupStatus()
+      ])
+
+      setState({
+        hasPermission,
+        startupEnabled,
+        isLoading: false
+      })
     } catch (error) {
-      console.error('Error checking permissions:', error)
-      setRecordingState((prev) => ({ ...prev, isPermissionGranted: false }))
-    }
-  }
-
-  const selectFolder = async () => {
-    if (!window.api?.recording) return
-
-    try {
-      const folder = await window.api.recording.openFolderDialog()
-      if (folder) {
-        setRecordingState((prev) => ({ ...prev, selectedFolder: folder }))
-        toast({
-          title: 'Folder Selected',
-          description: `Recordings will be saved to: ${folder}`
-        })
-      }
-    } catch (error) {
-      console.error('Error selecting folder:', error)
+      console.error('Error checking status:', error)
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        hasPermission: false,
+        startupEnabled: false
+      }))
       toast({
         title: 'Error',
-        description: 'Failed to open folder dialog.',
+        description: 'Failed to check app status. Please restart the app.',
         variant: 'destructive'
       })
     }
   }
 
-  const startRecording = async () => {
-    if (!window.api?.recording || !recordingState.selectedFolder) return
+  const handleRequestPermissions = async () => {
+    if (!window.api.companion) return
 
     try {
-      const result = await window.api.recording.startRecording({
-        filepath: recordingState.selectedFolder,
-        filename: recordingState.filename || undefined
-      })
+      setState((prev) => ({ ...prev, isLoading: true }))
 
-      if (!result.success) {
+      const granted = await window.api.companion.requestPermissions()
+
+      setState((prev) => ({ ...prev, hasPermission: granted, isLoading: false }))
+
+      if (granted) {
         toast({
-          title: 'Recording Failed',
-          description: result.error || 'Unknown error occurred.',
+          title: 'Permission Granted',
+          description: 'Screen recording permission has been granted successfully.'
+        })
+      } else {
+        toast({
+          title: 'Permission Required',
+          description:
+            'Please grant screen recording permission in System Preferences and restart the app.',
           variant: 'destructive'
         })
       }
     } catch (error) {
-      console.error('Error starting recording:', error)
+      console.error('Error requesting permissions:', error)
+      setState((prev) => ({ ...prev, isLoading: false }))
       toast({
-        title: 'Recording Failed',
-        description: 'Failed to start recording.',
+        title: 'Error',
+        description: 'Failed to request permissions.',
         variant: 'destructive'
       })
     }
   }
 
-  const stopRecording = async () => {
-    if (!window.api?.recording) return
+  const handleToggleStartup = async () => {
+    if (!window.api?.companion) return
 
     try {
-      const result = await window.api.recording.stopRecording()
+      setState((prev) => ({ ...prev, isLoading: true }))
 
-      if (!result.success) {
+      const newStartupState = !state.startupEnabled
+      const success = await window.api.companion.setStartup(newStartupState)
+
+      if (success) {
+        setState((prev) => ({
+          ...prev,
+          startupEnabled: newStartupState,
+          isLoading: false
+        }))
+
         toast({
-          title: 'Stop Recording Failed',
-          description: result.error || 'Unknown error occurred.',
+          title: newStartupState ? 'Startup Enabled' : 'Startup Disabled',
+          description: newStartupState
+            ? 'App will now start automatically on system startup.'
+            : 'App will no longer start automatically on system startup.'
+        })
+      } else {
+        setState((prev) => ({ ...prev, isLoading: false }))
+        toast({
+          title: 'Error',
+          description: 'Failed to update startup settings.',
           variant: 'destructive'
         })
       }
     } catch (error) {
-      console.error('Error stopping recording:', error)
+      console.error('Error toggling startup:', error)
+      setState((prev) => ({ ...prev, isLoading: false }))
       toast({
-        title: 'Stop Recording Failed',
-        description: 'Failed to stop recording.',
+        title: 'Error',
+        description: 'Failed to update startup settings.',
         variant: 'destructive'
       })
     }
   }
 
-  const formatDuration = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
-  }
+  const PermissionCard = () => (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Shield className="h-5 w-5" />
+          Screen Recording Permission
+        </CardTitle>
+        <CardDescription>Required for system audio capture functionality</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {state.hasPermission === true ? (
+              <>
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                <span className="text-sm font-medium text-green-600">Permission Granted</span>
+              </>
+            ) : state.hasPermission === false ? (
+              <>
+                <Shield className="h-4 w-4 text-red-600" />
+                <span className="text-sm font-medium text-red-600">Permission Denied</span>
+              </>
+            ) : (
+              <>
+                <Settings className="h-4 w-4 text-yellow-600" />
+                <span className="text-sm font-medium text-yellow-600">Checking...</span>
+              </>
+            )}
+          </div>
+          {state.hasPermission !== true && (
+            <Button onClick={handleRequestPermissions} disabled={state.isLoading} size="sm">
+              Grant Permission
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  )
 
-  const canRecord = recordingState.isPermissionGranted && recordingState.selectedFolder
+  const StartupCard = () => (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Power className="h-5 w-5" />
+          Run on Startup
+        </CardTitle>
+        <CardDescription>
+          Start the companion app automatically when your system boots
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium">
+            {state.startupEnabled ? 'Enabled' : 'Disabled'}
+          </span>
+          <Button
+            onClick={handleToggleStartup}
+            disabled={state.isLoading}
+            variant={state.startupEnabled ? 'destructive' : 'default'}
+            size="sm"
+          >
+            {state.startupEnabled ? 'Disable' : 'Enable'}
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
 
   return (
-    <div className="w-full max-w-2xl mx-auto p-6">
-      <Card className="w-full">
-        <CardHeader className="text-center">
-          <CardTitle className="flex items-center justify-center gap-2">
-            <Mic className="h-6 w-6" />
-            Audio Recorder
-          </CardTitle>
-          <CardDescription>Record system audio with high quality FLAC format</CardDescription>
-        </CardHeader>
+    <div className="w-full max-w-md mx-auto p-6 space-y-4">
+      <div className="text-center mb-6">
+        <h1 className="text-2xl font-bold mb-2">System Audio Companion</h1>
+        <p className="text-sm text-muted-foreground">
+          Configure permissions and settings for system audio streaming
+        </p>
+      </div>
 
-        <CardContent className="space-y-6">
-          {/* Permission Status */}
-          <div className="flex items-center justify-between p-4 border rounded-lg">
-            <div className="flex items-center gap-2">
-              <Settings className="h-4 w-4" />
-              <span className="text-sm font-medium">Screen Recording Permission</span>
-            </div>
-            <div
-              className={`px-2 py-1 rounded text-xs font-medium ${
-                recordingState.isPermissionGranted === true
-                  ? 'bg-green-100 text-green-800'
-                  : recordingState.isPermissionGranted === false
-                    ? 'bg-red-100 text-red-800'
-                    : 'bg-yellow-100 text-yellow-800'
-              }`}
-            >
-              {recordingState.isPermissionGranted === true
-                ? 'Granted'
-                : recordingState.isPermissionGranted === false
-                  ? 'Denied'
-                  : 'Checking...'}
-            </div>
-          </div>
+      <PermissionCard />
+      <StartupCard />
 
-          {/* Folder Selection */}
-          <div className="space-y-2">
-            <Label htmlFor="folder">Recording Location</Label>
-            <div className="flex gap-2">
-              <Input
-                id="folder"
-                placeholder="Select a folder to save recordings..."
-                value={recordingState.selectedFolder || ''}
-                readOnly
-                className="flex-1"
-              />
-              <Button onClick={selectFolder} variant="outline" size="icon">
-                <FolderOpen className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-
-          {/* Filename Input */}
-          <div className="space-y-2">
-            <Label htmlFor="filename">Filename (optional)</Label>
-            <Input
-              id="filename"
-              placeholder="Enter custom filename..."
-              value={recordingState.filename}
-              onChange={(e) => setRecordingState((prev) => ({ ...prev, filename: e.target.value }))}
-              disabled={recordingState.isRecording}
-            />
-            <p className="text-xs text-muted-foreground">
-              Leave empty to use timestamp. Extension (.flac) will be added automatically.
-            </p>
-          </div>
-
-          {/* Recording Controls */}
-          <div className="flex flex-col items-center gap-4">
-            {recordingState.isRecording && (
-              <div className="text-center">
-                <div className="text-2xl font-mono font-bold">
-                  {formatDuration(recordingState.duration)}
-                </div>
-                <p className="text-sm text-muted-foreground">Recording in progress...</p>
-                {recordingState.recordingPath && (
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Saving to: {recordingState.recordingPath}
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="flex gap-3">
-              <Button
-                onClick={recordingState.isRecording ? stopRecording : startRecording}
-                disabled={!canRecord}
-                variant={recordingState.isRecording ? 'destructive' : 'default'}
-                size="lg"
-                className="flex items-center gap-2"
-              >
-                {recordingState.isRecording ? (
-                  <>
-                    <MicOff className="h-5 w-5" />
-                    Stop Recording
-                  </>
-                ) : (
-                  <>
-                    <Mic className="h-5 w-5" />
-                    Start Recording
-                  </>
-                )}
-              </Button>
-            </div>
-
-            {!canRecord && (
-              <p className="text-sm text-muted-foreground text-center">
-                {!recordingState.isPermissionGranted
-                  ? 'Please grant screen recording permission to continue.'
-                  : !recordingState.selectedFolder
-                    ? 'Please select a folder to save recordings.'
-                    : ''}
-              </p>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Permission Dialog */}
-      <AlertDialog open={showPermissionDialog} onOpenChange={setShowPermissionDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Screen Recording Permission Required</AlertDialogTitle>
-            <AlertDialogDescription>
-              This app needs screen recording permission to capture system audio. Please grant
-              permission in System Preferences and restart the app.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setShowPermissionDialog(false)}>
-              I'll Grant Permission
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <div className="text-center pt-4">
+        <p className="text-xs text-muted-foreground">
+          The app will run in the system tray when the window is closed
+        </p>
+      </div>
     </div>
   )
 }
