@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react'
 import { Button } from './ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card'
 import { useToast } from '../lib/hooks/use-toast'
-import { Settings, Shield, Power, CheckCircle } from 'lucide-react'
+import { Settings, Shield, Power, CheckCircle, Radio } from 'lucide-react'
+import { WebRTCManager } from './WebRTCManager'
 
 interface CompanionState {
   hasPermission: boolean | null
   startupEnabled: boolean
   isLoading: boolean
+  activeTab: 'settings' | 'webrtc'
 }
 
 export const AudioRecorder: React.FC = () => {
@@ -15,102 +17,77 @@ export const AudioRecorder: React.FC = () => {
   const [state, setState] = useState<CompanionState>({
     hasPermission: null,
     startupEnabled: false,
-    isLoading: true
+    isLoading: true,
+    activeTab: 'settings'
   })
 
   // Check permissions and startup status on component mount
   useEffect(() => {
-    console.log('Component mounted, checking window.api:', window.api)
-    console.log('window.api?.companion:', window.api?.companion)
-    console.log('window.electron:', window.electron)
-    console.log('All window properties:', Object.keys(window))
-
-    // Add a small delay to ensure APIs are loaded
-    const timer = setTimeout(() => {
-      checkStatus()
-    }, 100)
-
-    return () => clearTimeout(timer)
+    checkStatus()
   }, [])
 
   const checkStatus = async () => {
-    // Wait for API to be available with retries
-    let retries = 0
-    const maxRetries = 10
-
-    while (!window.api?.companion && retries < maxRetries) {
-      console.log(`Waiting for API... attempt ${retries + 1}/${maxRetries}`)
-      await new Promise((resolve) => setTimeout(resolve, 100))
-      retries++
-    }
-
-    if (!window.api?.companion) {
-      console.warn('Companion API not available after retries')
+    if (!window.api?.permission) {
+      console.warn('Permission API not available')
       setState((prev) => ({ ...prev, isLoading: false, hasPermission: false }))
-      toast({
-        title: 'API Error',
-        description: 'Failed to load app API. Please restart the application.',
-        variant: 'destructive'
-      })
       return
     }
-
-    console.log('API available, proceeding with status check')
 
     try {
       setState((prev) => ({ ...prev, isLoading: true }))
 
       const [hasPermission, startupEnabled] = await Promise.all([
-        window.api.companion.checkPermissions(),
-        window.api.companion.getStartupStatus()
+        window.api.permission.checkPermissions(),
+        window.api.permission.getStartupStatus()
       ])
 
       setState({
         hasPermission,
         startupEnabled,
-        isLoading: false
+        isLoading: false,
+        activeTab: hasPermission ? 'webrtc' : 'settings'
       })
     } catch (error) {
       console.error('Error checking status:', error)
       setState((prev) => ({
         ...prev,
         isLoading: false,
-        hasPermission: false,
-        startupEnabled: false
+        hasPermission: false
       }))
       toast({
         title: 'Error',
-        description: 'Failed to check app status. Please restart the app.',
+        description: 'Failed to check system status.',
         variant: 'destructive'
       })
     }
   }
 
   const handleRequestPermissions = async () => {
-    if (!window.api.companion) return
-
     try {
       setState((prev) => ({ ...prev, isLoading: true }))
 
-      const granted = await window.api.companion.requestPermissions()
-
-      setState((prev) => ({ ...prev, hasPermission: granted, isLoading: false }))
+      const granted = await window.api.permission.requestPermissions()
 
       if (granted) {
+        setState((prev) => ({
+          ...prev,
+          hasPermission: true,
+          isLoading: false,
+          activeTab: 'webrtc'
+        }))
         toast({
           title: 'Permission Granted',
-          description: 'Screen recording permission has been granted successfully.'
+          description: 'Screen recording permission has been granted!'
         })
       } else {
+        setState((prev) => ({ ...prev, isLoading: false }))
         toast({
           title: 'Permission Required',
-          description:
-            'Please grant screen recording permission in System Preferences and restart the app.',
+          description: 'Please grant screen recording permission in System Preferences.',
           variant: 'destructive'
         })
       }
     } catch (error) {
-      console.error('Error requesting permissions:', error)
       setState((prev) => ({ ...prev, isLoading: false }))
       toast({
         title: 'Error',
@@ -121,29 +98,17 @@ export const AudioRecorder: React.FC = () => {
   }
 
   const handleToggleStartup = async () => {
-    if (!window.api?.companion) return
-
     try {
-      setState((prev) => ({ ...prev, isLoading: true }))
-
       const newStartupState = !state.startupEnabled
-      const success = await window.api.companion.setStartup(newStartupState)
+      const success = await window.api.permission.setStartup(newStartupState)
 
       if (success) {
-        setState((prev) => ({
-          ...prev,
-          startupEnabled: newStartupState,
-          isLoading: false
-        }))
-
+        setState((prev) => ({ ...prev, startupEnabled: newStartupState }))
         toast({
           title: newStartupState ? 'Startup Enabled' : 'Startup Disabled',
-          description: newStartupState
-            ? 'App will now start automatically on system startup.'
-            : 'App will no longer start automatically on system startup.'
+          description: `App will ${newStartupState ? 'now' : 'no longer'} start automatically on system boot.`
         })
       } else {
-        setState((prev) => ({ ...prev, isLoading: false }))
         toast({
           title: 'Error',
           description: 'Failed to update startup settings.',
@@ -151,8 +116,6 @@ export const AudioRecorder: React.FC = () => {
         })
       }
     } catch (error) {
-      console.error('Error toggling startup:', error)
-      setState((prev) => ({ ...prev, isLoading: false }))
       toast({
         title: 'Error',
         description: 'Failed to update startup settings.',
@@ -161,90 +124,144 @@ export const AudioRecorder: React.FC = () => {
     }
   }
 
-  const PermissionCard = () => (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Shield className="h-5 w-5" />
-          Screen Recording Permission
-        </CardTitle>
-        <CardDescription>Required for system audio capture functionality</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            {state.hasPermission === true ? (
-              <>
-                <CheckCircle className="h-4 w-4 text-green-600" />
-                <span className="text-sm font-medium text-green-600">Permission Granted</span>
-              </>
-            ) : state.hasPermission === false ? (
-              <>
-                <Shield className="h-4 w-4 text-red-600" />
-                <span className="text-sm font-medium text-red-600">Permission Denied</span>
-              </>
-            ) : (
-              <>
-                <Settings className="h-4 w-4 text-yellow-600" />
-                <span className="text-sm font-medium text-yellow-600">Checking...</span>
-              </>
-            )}
-          </div>
-          {state.hasPermission !== true && (
-            <Button onClick={handleRequestPermissions} disabled={state.isLoading} size="sm">
-              Grant Permission
-            </Button>
-          )}
-        </div>
-      </CardContent>
-    </Card>
-  )
-
-  const StartupCard = () => (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Power className="h-5 w-5" />
-          Run on Startup
-        </CardTitle>
-        <CardDescription>
-          Start the companion app automatically when your system boots
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium">
-            {state.startupEnabled ? 'Enabled' : 'Disabled'}
-          </span>
-          <Button
-            onClick={handleToggleStartup}
-            disabled={state.isLoading}
-            variant={state.startupEnabled ? 'destructive' : 'default'}
-            size="sm"
-          >
-            {state.startupEnabled ? 'Disable' : 'Enable'}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+  const renderTabButton = (tab: 'settings' | 'webrtc', label: string, icon: React.ReactNode) => (
+    <button
+      onClick={() => setState((prev) => ({ ...prev, activeTab: tab }))}
+      className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+        state.activeTab === tab
+          ? 'bg-primary text-primary-foreground'
+          : 'bg-muted text-muted-foreground hover:bg-muted/80'
+      }`}
+      disabled={tab === 'webrtc' && !state.hasPermission}
+    >
+      {icon}
+      {label}
+    </button>
   )
 
   return (
-    <div className="w-full max-w-md mx-auto p-6 space-y-4">
-      <div className="text-center mb-6">
-        <h1 className="text-2xl font-bold mb-2">System Audio Companion</h1>
-        <p className="text-sm text-muted-foreground">
-          Configure permissions and settings for system audio streaming
-        </p>
-      </div>
+    <div className="min-h-screen w-full bg-background p-6">
+      <div className="max-w-2xl mx-auto space-y-6">
+        {/* Header */}
+        <div className="text-center space-y-2">
+          <h1 className="text-2xl font-bold">System Audio Companion</h1>
+          <p className="text-muted-foreground">Stream your system audio to websites via WebRTC</p>
+        </div>
 
-      <PermissionCard />
-      <StartupCard />
+        {/* Tabs */}
+        <div className="flex gap-2 p-1 bg-muted rounded-lg">
+          {renderTabButton('settings', 'Settings', <Settings className="h-4 w-4" />)}
+          {renderTabButton('webrtc', 'Audio Stream', <Radio className="h-4 w-4" />)}
+        </div>
 
-      <div className="text-center pt-4">
-        <p className="text-xs text-muted-foreground">
-          The app will run in the system tray when the window is closed
-        </p>
+        {/* Settings Tab */}
+        {state.activeTab === 'settings' && (
+          <div className="space-y-4">
+            {/* Permission Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="h-5 w-5" />
+                  Screen Recording Permission
+                </CardTitle>
+                <CardDescription>Required to capture system audio for streaming</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {state.isLoading ? (
+                      <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                    ) : state.hasPermission ? (
+                      <CheckCircle className="h-5 w-5 text-green-600" />
+                    ) : (
+                      <Shield className="h-5 w-5 text-red-600" />
+                    )}
+                    <span className="font-medium">
+                      {state.isLoading
+                        ? 'Checking...'
+                        : state.hasPermission
+                          ? 'Permission Granted'
+                          : 'Permission Required'}
+                    </span>
+                  </div>
+
+                  {!state.hasPermission && !state.isLoading && (
+                    <Button onClick={handleRequestPermissions}>Grant Permission</Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Startup Card */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Power className="h-5 w-5" />
+                  Run on Startup
+                </CardTitle>
+                <CardDescription>
+                  Automatically start the companion app when your system boots
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">
+                    Start with system: {state.startupEnabled ? 'Enabled' : 'Disabled'}
+                  </span>
+                  <Button
+                    onClick={handleToggleStartup}
+                    variant={state.startupEnabled ? 'destructive' : 'default'}
+                  >
+                    {state.startupEnabled ? 'Disable' : 'Enable'}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Next Steps */}
+            {state.hasPermission && (
+              <Card className="border-green-200 bg-green-50">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-green-800">
+                    <CheckCircle className="h-5 w-5" />
+                    Ready to Stream
+                  </CardTitle>
+                  <CardDescription className="text-green-700">
+                    All permissions are configured. Switch to the Audio Stream tab to connect to
+                    websites.
+                  </CardDescription>
+                </CardHeader>
+              </Card>
+            )}
+          </div>
+        )}
+
+        {/* WebRTC Tab */}
+        {state.activeTab === 'webrtc' && state.hasPermission && <WebRTCManager />}
+
+        {/* Permission Required Message for WebRTC Tab */}
+        {state.activeTab === 'webrtc' && !state.hasPermission && (
+          <Card className="border-yellow-200 bg-yellow-50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-yellow-800">
+                <Shield className="h-5 w-5" />
+                Permission Required
+              </CardTitle>
+              <CardDescription className="text-yellow-700">
+                Screen recording permission is required to stream system audio. Please grant
+                permission in the Settings tab first.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <Button
+                onClick={() => setState((prev) => ({ ...prev, activeTab: 'settings' }))}
+                className="mt-2"
+              >
+                Go to Settings
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   )

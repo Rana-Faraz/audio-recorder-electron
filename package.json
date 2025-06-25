@@ -6,7 +6,7 @@
   "author": "example.com",
   "homepage": "https://electron-vite.org",
   "scripts": {
-    "swift:make": "swiftc -o src/native/Recorder src/native/recorder.swift -framework AVFoundation -framework ScreenCaptureKit",
+    "swift:make": "swiftc -o src/native/Recorder src/native/recorder.swift -framework AVFoundation -framework ScreenCaptureKit && swiftc -o src/native/AudioStreamer src/native/audio-streamer.swift -framework AVFoundation -framework ScreenCaptureKit",
     "format": "prettier --write .",
     "lint": "eslint . --ext .js,.jsx,.cjs,.mjs,.ts,.tsx,.cts,.mts --fix",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
@@ -34,7 +34,10 @@
     "electron-updater": "^6.1.7",
     "lucide-react": "^0.456.0",
     "tailwind-merge": "^2.5.4",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "ws": "^8.18.0",
+    "express": "^4.21.2",
+    "cors": "^2.8.5"
   },
   "devDependencies": {
     "@electron-toolkit/eslint-config-prettier": "^2.0.0",
@@ -43,6 +46,9 @@
     "@types/node": "^20.17.6",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
+    "@types/ws": "^8.5.13",
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
     "electron": "^31.0.2",

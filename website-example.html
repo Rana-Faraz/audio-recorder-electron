@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebSocket WebRTC Audio Receiver</title>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        min-height: 100vh;
+      }
+
+      .container {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        padding: 30px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      }
+
+      h1 {
+        text-align: center;
+        margin-bottom: 30px;
+        font-size: 2.5em;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+      }
+
+      .status-card {
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 15px;
+        padding: 20px;
+        margin: 20px 0;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+      }
+
+      .status-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 8px;
+      }
+
+      .status-connected {
+        background-color: #4caf50;
+      }
+      .status-connecting {
+        background-color: #ff9800;
+        animation: pulse 1s infinite;
+      }
+      .status-disconnected {
+        background-color: #f44336;
+      }
+
+      @keyframes pulse {
+        0% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.5;
+        }
+        100% {
+          opacity: 1;
+        }
+      }
+
+      button {
+        background: linear-gradient(45deg, #ff6b6b, #4ecdc4);
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 25px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: bold;
+        transition: all 0.3s ease;
+        margin: 10px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      }
+
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+      }
+
+      button:disabled {
+        background: #666;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      .log-container {
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 10px;
+        padding: 15px;
+        margin: 20px 0;
+        max-height: 300px;
+        overflow-y: auto;
+        font-family: 'Monaco', 'Consolas', monospace;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+
+      .log-entry {
+        margin: 2px 0;
+        padding: 2px 5px;
+        border-radius: 3px;
+      }
+
+      .log-info {
+        color: #4ecdc4;
+      }
+      .log-success {
+        color: #4caf50;
+      }
+      .log-warning {
+        color: #ff9800;
+      }
+      .log-error {
+        color: #f44336;
+      }
+
+      .audio-controls {
+        text-align: center;
+        margin: 30px 0;
+      }
+
+      audio {
+        width: 100%;
+        max-width: 400px;
+        margin: 20px 0;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 15px;
+        margin: 20px 0;
+      }
+
+      .metric {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 15px;
+        border-radius: 10px;
+        text-align: center;
+      }
+
+      .metric-value {
+        font-size: 1.5em;
+        font-weight: bold;
+        color: #4ecdc4;
+      }
+
+      .metric-label {
+        font-size: 0.9em;
+        opacity: 0.8;
+        margin-top: 5px;
+      }
+
+      .protocol-badge {
+        display: inline-block;
+        background: linear-gradient(45deg, #667eea, #764ba2);
+        padding: 5px 15px;
+        border-radius: 20px;
+        font-size: 0.8em;
+        font-weight: bold;
+        margin: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🎵 WebSocket WebRTC Audio Receiver</h1>
+
+      <div class="status-card">
+        <h3>📡 Connection Status</h3>
+        <div>
+          <span class="protocol-badge">WebSocket Signaling</span>
+          <span class="protocol-badge">WebRTC P2P</span>
+        </div>
+        <div style="margin: 15px 0">
+          <div id="websocketStatus">
+            <span class="status-indicator status-disconnected"></span>
+            WebSocket: Disconnected
+          </div>
+          <div id="webrtcStatus" style="margin-top: 10px">
+            <span class="status-indicator status-disconnected"></span>
+            WebRTC: Not Connected
+          </div>
+        </div>
+      </div>
+
+      <div class="audio-controls">
+        <button id="connectBtn" onclick="connectToSignalingServer()">
+          Connect to Electron App
+        </button>
+        <button id="disconnectBtn" onclick="disconnectFromSignalingServer()" disabled>
+          Disconnect
+        </button>
+        <br />
+        <button
+          id="stopRecordingBtn"
+          onclick="stopRecording()"
+          disabled
+          style="background: linear-gradient(45deg, #f44336, #e91e63)"
+        >
+          🛑 Stop Recording
+        </button>
+        <br />
+        <audio id="audioPlayer" controls autoplay>
+          Your browser does not support the audio element.
+        </audio>
+      </div>
+
+      <div class="metrics" id="metrics">
+        <div class="metric">
+          <div class="metric-value" id="latencyValue">--</div>
+          <div class="metric-label">Latency (ms)</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="bitrateValue">--</div>
+          <div class="metric-label">Bitrate (kbps)</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="packetsValue">--</div>
+          <div class="metric-label">Packets Lost</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="connectionValue">--</div>
+          <div class="metric-label">Connection State</div>
+        </div>
+      </div>
+
+      <div class="status-card">
+        <h3>📋 Real-time Logs</h3>
+        <div class="log-container" id="logContainer"></div>
+        <button onclick="clearLogs()" style="font-size: 12px; padding: 5px 10px">Clear Logs</button>
+      </div>
+
+      <div class="status-card">
+        <h3>ℹ️ How It Works</h3>
+        <p><strong>WebSocket Signaling Architecture:</strong></p>
+        <ol>
+          <li>
+            🔗 <strong>Connect:</strong> Website connects to WebSocket signaling server at
+            <code>ws://localhost:8080</code>
+          </li>
+          <li>🏷️ <strong>Identify:</strong> Website identifies itself as a "website" client</li>
+          <li>📤 <strong>Offer:</strong> Website creates WebRTC offer and sends via WebSocket</li>
+          <li>🔄 <strong>Forward:</strong> Signaling server forwards offer to Electron app</li>
+          <li>
+            📥 <strong>Answer:</strong> Electron app creates answer and sends back via WebSocket
+          </li>
+          <li>
+            🧊 <strong>ICE Exchange:</strong> Both sides exchange ICE candidates via WebSocket
+          </li>
+          <li>🎵 <strong>Stream:</strong> Direct P2P WebRTC audio streaming begins</li>
+          <li>🛑 <strong>Control:</strong> Website can stop recording via WebSocket signaling</li>
+        </ol>
+        <p>
+          <strong>Benefits:</strong> Reliable signaling, proper ICE candidate exchange, ultra-low
+          latency P2P streaming, remote recording control
+        </p>
+      </div>
+    </div>
+
+    <script>
+      let websocket = null
+      let peerConnection = null
+      let sessionId = null
+      let startTime = null
+      let statsInterval = null
+      let clientId = null
+
+      const configuration = {
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' }
+        ],
+        iceCandidatePoolSize: 10,
+        bundlePolicy: 'max-bundle',
+        rtcpMuxPolicy: 'require'
+      }
+
+      function log(message, type = 'info') {
+        const timestamp = new Date().toLocaleTimeString()
+        const logContainer = document.getElementById('logContainer')
+        const logEntry = document.createElement('div')
+        logEntry.className = `log-entry log-${type}`
+        logEntry.textContent = `[${timestamp}] ${message}`
+        logContainer.appendChild(logEntry)
+        logContainer.scrollTop = logContainer.scrollHeight
+        console.log(`[${type.toUpperCase()}] ${message}`)
+      }
+
+      function updateStatus(element, status, isConnected) {
+        const indicator = element.querySelector('.status-indicator')
+        if (isConnected) {
+          indicator.className = 'status-indicator status-connected'
+        } else if (status.includes('connecting') || status.includes('checking')) {
+          indicator.className = 'status-indicator status-connecting'
+        } else {
+          indicator.className = 'status-indicator status-disconnected'
+        }
+        element.innerHTML = element.innerHTML.replace(/: .*/, `: ${status}`)
+      }
+
+      function updateMetric(id, value) {
+        const element = document.getElementById(id)
+        if (element) {
+          element.textContent = value
+        }
+      }
+
+      function clearLogs() {
+        document.getElementById('logContainer').innerHTML = ''
+      }
+
+      async function connectToSignalingServer() {
+        try {
+          log('🔗 Connecting to WebSocket signaling server...', 'info')
+
+          websocket = new WebSocket('ws://localhost:8080')
+
+          websocket.onopen = () => {
+            log('✅ WebSocket connected to signaling server', 'success')
+            updateStatus(document.getElementById('websocketStatus'), 'Connected', true)
+
+            // Identify as website client
+            websocket.send(
+              JSON.stringify({
+                type: 'identify',
+                clientType: 'website'
+              })
+            )
+
+            log('🏷️ Sent client identification', 'info')
+
+            document.getElementById('connectBtn').disabled = true
+            document.getElementById('disconnectBtn').disabled = false
+          }
+
+          websocket.onmessage = async (event) => {
+            try {
+              const message = JSON.parse(event.data)
+              await handleSignalingMessage(message)
+            } catch (error) {
+              log(`❌ Error parsing WebSocket message: ${error.message}`, 'error')
+            }
+          }
+
+          websocket.onclose = () => {
+            log('🔌 WebSocket connection closed', 'warning')
+            updateStatus(document.getElementById('websocketStatus'), 'Disconnected', false)
+            document.getElementById('connectBtn').disabled = false
+            document.getElementById('disconnectBtn').disabled = true
+
+            if (peerConnection) {
+              peerConnection.close()
+              peerConnection = null
+            }
+          }
+
+          websocket.onerror = (error) => {
+            log(`❌ WebSocket error: ${error.message || 'Connection failed'}`, 'error')
+            updateStatus(document.getElementById('websocketStatus'), 'Error', false)
+          }
+        } catch (error) {
+          log(`❌ Failed to connect: ${error.message}`, 'error')
+        }
+      }
+
+      async function handleSignalingMessage(message) {
+        log(`📨 Received: ${message.type}`, 'info')
+
+        switch (message.type) {
+          case 'client-connected':
+            if (message.data?.clientType === 'website' && !peerConnection) {
+              clientId = message.data.clientId
+              log(`✅ Registered as website client: ${clientId}`, 'success')
+
+              // Start WebRTC connection process
+              await startWebRTCConnection()
+            }
+            break
+
+          case 'answer':
+            await handleAnswer(message)
+            break
+
+          case 'ice-candidate':
+            await handleIceCandidate(message)
+            break
+
+          case 'stop-recording':
+            log('🛑 Recording stopped by Electron app', 'info')
+            document.getElementById('stopRecordingBtn').disabled = true
+            break
+
+          case 'client-disconnected':
+            log('⚠️ Electron app disconnected', 'warning')
+            if (peerConnection) {
+              peerConnection.close()
+              peerConnection = null
+              updateStatus(document.getElementById('webrtcStatus'), 'Disconnected', false)
+            }
+            // Disable stop recording button
+            document.getElementById('stopRecordingBtn').disabled = true
+            break
+
+          default:
+            log(`⚠️ Unknown message type: ${message.type}`, 'warning')
+        }
+      }
+
+      async function startWebRTCConnection() {
+        try {
+          log('🚀 Starting WebRTC connection...', 'info')
+          startTime = Date.now()
+
+          // Create peer connection
+          peerConnection = new RTCPeerConnection(configuration)
+          sessionId = generateSessionId()
+
+          // Set up peer connection event handlers
+          peerConnection.onicecandidate = async (event) => {
+            if (event.candidate && websocket && websocket.readyState === WebSocket.OPEN) {
+              log(`🧊 Sending ICE candidate (session: ${sessionId})`, 'info')
+              websocket.send(
+                JSON.stringify({
+                  type: 'ice-candidate',
+                  sessionId: sessionId,
+                  data: event.candidate
+                })
+              )
+            }
+          }
+
+          peerConnection.ontrack = (event) => {
+            log('🎵 Received audio track!', 'success')
+            const audioPlayer = document.getElementById('audioPlayer')
+            audioPlayer.srcObject = event.streams[0]
+
+            // Calculate connection latency
+            if (startTime) {
+              const latency = Date.now() - startTime
+              log(`⚡ Connection established in ${latency}ms`, 'success')
+              updateMetric('latencyValue', latency)
+            }
+          }
+
+          peerConnection.onconnectionstatechange = () => {
+            const state = peerConnection.connectionState
+            log(`🔗 Connection state: ${state}`, 'info')
+            updateStatus(document.getElementById('webrtcStatus'), state, state === 'connected')
+            updateMetric('connectionValue', state)
+
+            if (state === 'connected') {
+              log('✅ WebRTC P2P connection established!', 'success')
+              startStatsMonitoring()
+              // Enable stop recording button when connected
+              document.getElementById('stopRecordingBtn').disabled = false
+            } else if (state === 'failed' || state === 'disconnected') {
+              log('❌ WebRTC connection failed/disconnected', 'error')
+              if (statsInterval) {
+                clearInterval(statsInterval)
+                statsInterval = null
+              }
+              // Disable stop recording button when disconnected
+              document.getElementById('stopRecordingBtn').disabled = true
+            }
+          }
+
+          peerConnection.oniceconnectionstatechange = () => {
+            const state = peerConnection.iceConnectionState
+            log(`🧊 ICE connection state: ${state}`, 'info')
+          }
+
+          // Create and send offer
+          const offer = await peerConnection.createOffer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: false
+          })
+
+          await peerConnection.setLocalDescription(offer)
+
+          log(`📤 Sending WebRTC offer via WebSocket (session: ${sessionId})...`, 'info')
+          websocket.send(
+            JSON.stringify({
+              type: 'offer',
+              sessionId: sessionId,
+              data: offer
+            })
+          )
+
+          updateStatus(document.getElementById('webrtcStatus'), 'Connecting...', false)
+        } catch (error) {
+          log(`❌ WebRTC connection failed: ${error.message}`, 'error')
+          updateStatus(document.getElementById('webrtcStatus'), 'Failed', false)
+        }
+      }
+
+      async function handleAnswer(message) {
+        if (!peerConnection || message.sessionId !== sessionId) {
+          log(
+            `⚠️ Received answer for session ${message.sessionId}, expected ${sessionId}`,
+            'warning'
+          )
+          return
+        }
+
+        try {
+          log('📥 Received WebRTC answer', 'success')
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(message.data))
+          log('✅ Remote description set successfully', 'success')
+        } catch (error) {
+          log(`❌ Failed to set remote description: ${error.message}`, 'error')
+        }
+      }
+
+      async function handleIceCandidate(message) {
+        if (!peerConnection || message.sessionId !== sessionId) {
+          log(
+            `⚠️ Received ICE candidate for session ${message.sessionId}, expected ${sessionId}`,
+            'warning'
+          )
+          return
+        }
+
+        try {
+          const candidate = message.data
+          // Skip invalid ICE candidates (common in WebRTC)
+          if (!candidate.sdpMid && candidate.sdpMLineIndex === null) {
+            log('🧊 Skipping invalid ICE candidate (null sdpMid/sdpMLineIndex)', 'info')
+            return
+          }
+
+          log('🧊 Received ICE candidate', 'info')
+          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+          log('✅ ICE candidate added successfully', 'success')
+        } catch (error) {
+          log(`❌ Failed to add ICE candidate: ${error.message}`, 'error')
+        }
+      }
+
+      function startStatsMonitoring() {
+        if (statsInterval) return
+
+        statsInterval = setInterval(async () => {
+          if (!peerConnection || peerConnection.connectionState !== 'connected') {
+            return
+          }
+
+          try {
+            const stats = await peerConnection.getStats()
+            let inboundAudio = null
+
+            stats.forEach((report) => {
+              if (report.type === 'inbound-rtp' && report.mediaType === 'audio') {
+                inboundAudio = report
+              }
+            })
+
+            if (inboundAudio) {
+              const bitrate = Math.round((inboundAudio.bytesReceived * 8) / 1000) // kbps
+              const packetsLost = inboundAudio.packetsLost || 0
+
+              updateMetric('bitrateValue', bitrate)
+              updateMetric('packetsValue', packetsLost)
+            }
+          } catch (error) {
+            log(`⚠️ Stats monitoring error: ${error.message}`, 'warning')
+          }
+        }, 1000)
+      }
+
+      function disconnectFromSignalingServer() {
+        log('🔌 Disconnecting...', 'info')
+
+        if (statsInterval) {
+          clearInterval(statsInterval)
+          statsInterval = null
+        }
+
+        if (peerConnection) {
+          peerConnection.close()
+          peerConnection = null
+        }
+
+        if (websocket) {
+          websocket.close()
+          websocket = null
+        }
+
+        sessionId = null
+        startTime = null
+
+        updateStatus(document.getElementById('websocketStatus'), 'Disconnected', false)
+        updateStatus(document.getElementById('webrtcStatus'), 'Disconnected', false)
+
+        // Reset metrics
+        updateMetric('latencyValue', '--')
+        updateMetric('bitrateValue', '--')
+        updateMetric('packetsValue', '--')
+        updateMetric('connectionValue', '--')
+
+        document.getElementById('connectBtn').disabled = false
+        document.getElementById('disconnectBtn').disabled = true
+        document.getElementById('stopRecordingBtn').disabled = true
+
+        const audioPlayer = document.getElementById('audioPlayer')
+        audioPlayer.srcObject = null
+
+        log('✅ Disconnected successfully', 'success')
+      }
+
+      function stopRecording() {
+        if (!websocket || websocket.readyState !== WebSocket.OPEN) {
+          log('❌ Cannot stop recording: not connected to signaling server', 'error')
+          return
+        }
+
+        if (!sessionId) {
+          log('❌ Cannot stop recording: no active session', 'error')
+          return
+        }
+
+        log('🛑 Stopping recording...', 'info')
+
+        // Send stop recording message to Electron app via WebSocket
+        websocket.send(
+          JSON.stringify({
+            type: 'stop-recording',
+            sessionId: sessionId,
+            data: { sessionId: sessionId }
+          })
+        )
+
+        log('📤 Stop recording signal sent to Electron app', 'success')
+
+        // Disable the stop recording button after sending
+        document.getElementById('stopRecordingBtn').disabled = true
+
+        // Note: We don't close the WebRTC connection, just stop the recording
+        // The connection remains active for potential future recording
+      }
+
+      function generateSessionId() {
+        return (
+          Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+        )
+      }
+
+      // Initialize
+      log('🌐 WebSocket WebRTC Audio Receiver loaded', 'info')
+      log('📡 Ready to connect to Electron app via WebSocket signaling', 'info')
+      log('🔗 Click "Connect to Electron App" to start', 'info')
+    </script>
+  </body>
+</html>

@@ -9,6 +9,8 @@ files:
 extraResources:
   - from: 'src/native/Recorder'
     to: 'Recorder'
+  - from: 'src/native/AudioStreamer'
+    to: 'AudioStreamer'
 win:
   icon: resources/icon.png
   target: nsis
